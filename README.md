@@ -8,7 +8,42 @@ A simple Flask application for managing cards with SQLite database.
 - Docker Buildx (included with Docker Desktop, or install separately for Linux)
 - A Docker registry account (e.g., Docker Hub, GitHub Container Registry) for pushing images
 
-## Docker Commands
+## CI/CD with GitHub Actions
+
+This repository includes a GitHub Actions workflow that automatically builds and pushes multi-architecture Docker images to GitHub Container Registry (ghcr.io).
+
+### How It Works
+
+Every push to the `main` branch will automatically:
+1. Build Docker images for both `linux/amd64` and `linux/arm64` platforms
+2. Push the image to `ghcr.io/<your-github-username>/mycards:latest`
+
+### Usage
+
+1. Push your code to the `main` branch:
+
+```bash
+git push origin main
+```
+
+2. Pull the image on any server:
+
+```bash
+docker pull ghcr.io/<your-github-username>/mycards:latest
+```
+
+### Making the Package Public
+
+By default, GitHub packages are private. To make your image publicly accessible:
+
+1. Go to your repository on GitHub
+2. Click on "Packages" in the right sidebar
+3. Click on the package name
+4. Go to "Package settings"
+5. Scroll down to "Danger Zone" and click "Change visibility"
+6. Select "Public"
+
+## Docker Commands (Manual)
 
 ### 1. Build the Docker Image
 
