@@ -29,7 +29,7 @@
                     <div class="card-body">
                         <h5 class="card-title">{{ card.name }}</h5>
                         <p class="card-text">Last used: {{
-                            card.updated_at.replace(tzinfo=from_tz).astimezone(to_tz).strftime('%m/%d %H:%M') }}</p>
+                            card.updated_at.replace(tzinfo=from_tz).astimezone(to_tz).strftime('%m/%d %I:%M %p') }}</p>
                         <button onclick="useCard('{{ card.id }}', '{{ card.name }}')" class="btn btn-primary">Use
                             Card</button>
                         <button onclick="deleteCard('{{ card.id }}', '{{ card.name }}')" class="btn btn-danger">Delete
