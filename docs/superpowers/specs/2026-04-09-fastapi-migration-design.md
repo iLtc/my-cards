@@ -93,7 +93,7 @@ new Intl.DateTimeFormat(undefined, {
 **Retained from today:**
 - Bootstrap 5.3.3 via CDN
 - Overall visual design
-- Auto-refresh on tab focus if hidden ≥4 hours
+- On tab focus after ≥4 hours hidden: re-fetch cards via AJAX (no full page reload). Show a loading indicator during the fetch. If the fetch fails (e.g. Cloudflare session expired → 401/403), fall back to a full page reload so Cloudflare can trigger its login flow.
 
 ## Error Handling
 
@@ -109,7 +109,6 @@ New packages to add:
 - `fastapi`
 - `uvicorn[standard]` (replaces gunicorn for dev; gunicorn + uvicorn worker for production)
 - `sqlalchemy`
-- `python-multipart` (needed for form data, if any forms remain)
 
 Removed:
 - `flask`
