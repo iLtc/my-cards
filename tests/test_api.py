@@ -56,8 +56,6 @@ def test_use_card(client):
     card_id = create_resp.json()["id"]
     original_updated_at = create_resp.json()["updated_at"]
 
-    import time; time.sleep(1)
-
     response = client.post(f"/api/cards/{card_id}")
     assert response.status_code == 200
     assert response.json()["updated_at"] != original_updated_at

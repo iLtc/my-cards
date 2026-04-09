@@ -39,7 +39,7 @@ def web_status(db: Session = Depends(get_db)):
 
 @web_router.get("/cards", response_class=HTMLResponse)
 def get_cards(request: Request):
-    return templates.TemplateResponse("cards.html", {"request": request})
+    return templates.TemplateResponse(request, "cards.html")
 
 
 @api_router.get("/status")

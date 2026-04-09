@@ -13,6 +13,6 @@ class CardResponse(BaseModel):
 
     @field_serializer("updated_at")
     def serialize_updated_at(self, v: datetime) -> str:
-        return v.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return v.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
     model_config = {"from_attributes": True}
