@@ -1,0 +1,9 @@
+[project]
+name = "my-cards"
+version = "0.1.0"
+description = "Minimal Flask app for tracking named cards and when they were last used"
+requires-python = ">=3.9"
+dependencies = [
+    "flask==3.1.0",
+    "gunicorn==23.0.0",
+]
