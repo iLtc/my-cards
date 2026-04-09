@@ -1,98 +1,99 @@
-import os
-import zoneinfo as zi
-from flask import Flask, request, render_template, redirect, url_for, make_response
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+
+from fastapi import Depends, HTTPException, Request
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.routing import APIRouter
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
 import database
+from database import get_db
+from models import Card
+from schemas import CardCreate, CardResponse
 
-from_tz = zi.ZoneInfo("UTC")
-default_to_tz = zi.ZoneInfo("America/Los_Angeles")
 
-ALLOWED_TIMEZONES = {
-    "America/Los_Angeles": "Los Angeles",
-    "Pacific/Honolulu": "Hawaii",
-}
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    database.init_db()
+    yield
 
-def get_to_tz():
-    tz_name = request.cookies.get("timezone", "America/Los_Angeles")
-    if tz_name not in ALLOWED_TIMEZONES:
-        tz_name = "America/Los_Angeles"
-    return zi.ZoneInfo(tz_name)
 
-app = Flask(__name__, instance_relative_config=True)
+app = FastAPI(lifespan=lifespan)
+templates = Jinja2Templates(directory="templates")
 
-app.config.from_mapping(
-        # a default secret that should be overridden by instance config
-        SECRET_KEY="dev",
-        # store the database in the instance folder
-        DATABASE=os.path.join(app.instance_path, "flaskr.sqlite"),
-    )
-app.config.from_pyfile("config.py", silent=True)
+web_router = APIRouter()
+api_router = APIRouter(prefix="/api")
 
-try:
-    os.makedirs(app.instance_path)
-except OSError:
-    pass
 
-database.init_app(app)
-
-@app.route("/status")
-def status():
-    db = database.get_db()
-
-    cards_count = db.execute("SELECT COUNT(*) FROM card").fetchone()[0]
-
-    if cards_count == 0:
+@web_router.get("/status", response_class=PlainTextResponse)
+def web_status(db: Session = Depends(get_db)):
+    count = db.query(Card).count()
+    if count == 0:
         return "OK: No cards"
-    else:
-        card_last_updated = db.execute("SELECT updated_at FROM card ORDER BY updated_at DESC LIMIT 1").fetchone()[0]
-        to_tz = get_to_tz()
-        return f"OK: {cards_count} cards, last updated at {card_last_updated.replace(tzinfo=from_tz).astimezone(to_tz)}"
+    last = db.query(Card).order_by(Card.updated_at.desc()).first()
+    return f"OK: {count} cards, last updated at {last.updated_at.isoformat()}Z"
 
-@app.get("/cards")
-def get_cards():
-    to_tz = get_to_tz()
-    db = database.get_db()
-    cards = db.execute("SELECT * FROM card ORDER BY updated_at ASC").fetchall()
-    return render_template("cards.html", cards=cards, from_tz=from_tz, to_tz=to_tz,
-                           timezones=ALLOWED_TIMEZONES, current_tz=to_tz.key)
 
-@app.post("/timezone")
-def set_timezone():
-    tz_name = request.form.get("timezone", "America/Los_Angeles")
-    if tz_name not in ALLOWED_TIMEZONES:
-        tz_name = "America/Los_Angeles"
-    response = make_response(redirect(url_for("get_cards")))
-    response.set_cookie("timezone", tz_name, max_age=60 * 60 * 24 * 365)
-    return response
+@web_router.get("/cards", response_class=HTMLResponse)
+def get_cards(request: Request):
+    return templates.TemplateResponse(request, "cards.html")
 
-@app.post("/cards")
-def create_card():
-    card_name = request.form["name"]
 
-    db = database.get_db()
+@api_router.get("/status")
+def api_status(db: Session = Depends(get_db)):
+    count = db.query(Card).count()
+    if count == 0:
+        return {"status": "OK", "cards_count": 0}
+    last = db.query(Card).order_by(Card.updated_at.desc()).first()
+    return {
+        "status": "OK",
+        "cards_count": count,
+        "last_updated_at": f"{last.updated_at.isoformat()}Z",
+    }
 
-    # if card_name is empty, redirect to the cards page
-    if not card_name:
-        return redirect(url_for("get_cards"))
 
-    # if card_name is already in the database, redirect to the cards page
-    if db.execute("SELECT * FROM card WHERE name = ?", (card_name,)).fetchone():
-        return redirect(url_for("get_cards"))
+@api_router.get("/cards", response_model=list[CardResponse])
+def list_cards(db: Session = Depends(get_db)):
+    return db.query(Card).order_by(Card.updated_at.asc()).all()
 
-    # add the card to the database
-    db.execute("INSERT INTO card (name) VALUES (?)", (card_name,))
+
+@api_router.post("/cards", response_model=CardResponse, status_code=201)
+def create_card(card: CardCreate, db: Session = Depends(get_db)):
+    if not card.name.strip():
+        raise HTTPException(status_code=422, detail="Card name cannot be empty")
+    db_card = Card(name=card.name.strip())
+    db.add(db_card)
+    try:
+        db.commit()
+        db.refresh(db_card)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Card name already exists")
+    return db_card
+
+
+@api_router.post("/cards/{card_id}", response_model=CardResponse)
+def use_card(card_id: int, db: Session = Depends(get_db)):
+    card = db.get(Card, card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    card.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
-    return redirect(url_for("get_cards"))
+    db.refresh(card)
+    return card
 
-@app.post("/cards/<int:id>")
-def update_card(id):
-    db = database.get_db()
-    db.execute("UPDATE card SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (id,))
-    db.commit()
-    return redirect(url_for("get_cards"))
 
-@app.delete("/cards/<int:id>")
-def delete_card(id):
-    db = database.get_db()
-    db.execute("DELETE FROM card WHERE id = ?", (id,))
+@api_router.delete("/cards/{card_id}", status_code=204)
+def delete_card(card_id: int, db: Session = Depends(get_db)):
+    card = db.get(Card, card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    db.delete(card)
     db.commit()
-    return redirect(url_for("get_cards"))
+
+
+app.include_router(web_router)
+app.include_router(api_router)

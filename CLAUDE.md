@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**my-cards** is a Flask web app for tracking named cards and when they were last used. Users create cards, mark them as "used" (updating the timestamp), and delete them. Deployed via Docker with Gunicorn.
+**my-cards** is a FastAPI web app for tracking named cards and when they were last used. Users create cards, mark them as "used" (updating the timestamp), and delete them. Deployed via Docker with Gunicorn.
 
 ## Development Commands
 
@@ -12,11 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 uv sync
 
-# Initialize database (WARNING: drops existing card table — destroys data)
-uv run flask --app app.py init-db
-
-# Run dev server (http://127.0.0.1:5000/cards)
-uv run flask --app app.py run
+# Run dev server (http://127.0.0.1:8000/cards)
+uv run uvicorn app:app --reload
 
 # Add a dependency
 uv add <package>
@@ -26,36 +23,37 @@ docker build -t my-cards .
 docker run -p 5000:5000 -v $(pwd)/instance:/app/instance my-cards
 ```
 
-No test suite exists. If adding tests, use `pytest` with Flask's test client and in-memory SQLite.
+No test suite exists. If adding tests, use `pytest` with FastAPI's TestClient (httpx) and SQLAlchemy fixtures with in-memory SQLite.
 
 ## Architecture
 
-- **`app.py`** — All routes and Flask app setup. Single module, no blueprints.
-- **`database.py`** — SQLite connection management via Flask's `g` object, plus `init-db` CLI command.
-- **`schema.sql`** — Single `card` table. Starts with `DROP TABLE IF EXISTS` (destructive on re-run).
+- **`app.py`** — All routes and FastAPI app setup. Web router (/status, /cards) and API router (/api/*). Single module, no blueprints.
+- **`database.py`** — SQLAlchemy engine, SessionLocal, get_db() dependency, init_db().
+- **`models.py`** — SQLAlchemy Card model.
+- **`schemas.py`** — Pydantic CardCreate + CardResponse models.
 - **`templates/cards.html`** — Single Jinja2 template with inline JS. Bootstrap 5.3.3 via CDN.
-- **`instance/`** — Gitignored. Holds `flaskr.sqlite` at runtime.
+- **`instance/`** — Gitignored. Holds `flaskr.sqlite` (SQLite database file) at runtime.
 
 ## Key Design Details
 
 - **Single table, no migrations.** Schema changes require manual SQL or destructive re-init.
-- **Uniqueness is app-enforced only** — duplicate card names are silently rejected (no DB constraint, no user-facing error).
-- **Timestamps** stored as UTC in SQLite. Displayed in user's selected timezone (cookie `timezone`). Default: `America/Los_Angeles`. Allowed timezones are hardcoded in `ALLOWED_TIMEZONES` dict in `app.py`.
-- **Timezone selection** — `POST /timezone` sets a cookie; `get_to_tz()` reads it on each request.
-- **Frontend mutations** — "Use Card" and "Delete Card" use `fetch()` with `POST`/`DELETE`, then redirect via JS. The "Add Card" form uses a standard HTML form POST.
-- **Auto-refresh** — If the browser tab has been hidden for ≥4 hours, the page reloads on focus.
+- **Uniqueness is DB-enforced via UniqueConstraint.** Duplicate names return 409 Conflict.
+- **Timestamps** stored as UTC in SQLite. Returned as UTC ISO strings by the API. Displayed in browser's local timezone via Intl.DateTimeFormat.
+- **Frontend mutations** — All mutations use fetch() calls to /api/cards. The web UI is a static HTML shell — no server-side rendering.
+- **Auto-refresh** — Auto-refresh on tab focus after ≥4 hours: re-fetches via AJAX, falls back to full page reload on error (e.g. Cloudflare session expired).
 - **No authentication** — anyone who can reach the URL can manage cards.
 
 ## Routes
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/status` | Health check |
+| GET | `/status` | Health check (web) |
 | GET | `/cards` | Main UI |
-| POST | `/cards` | Create card (form field: `name`) |
-| POST | `/cards/<id>` | Mark card as used (touch `updated_at`) |
-| DELETE | `/cards/<id>` | Delete card |
-| POST | `/timezone` | Set timezone preference cookie |
+| GET | `/api/status` | Health check (API) |
+| GET | `/api/cards` | List all cards |
+| POST | `/api/cards` | Create card |
+| POST | `/api/cards/{id}` | Mark card as used (touch `updated_at`) |
+| DELETE | `/api/cards/{id}` | Delete card |
 
 ## CI/CD
 
